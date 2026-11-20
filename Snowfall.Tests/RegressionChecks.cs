@@ -142,14 +142,11 @@ internal static class RegressionChecks
                 surface.Resize(new Rectangle(viewport.Left + 50 + i * 17, viewport.Top + 110 + i * 160, 960 - i * 60, 130));
                 surfaces.Add(surface);
             }
-            using var overlay = new SnowOverlay(app, viewport); _ = overlay.Handle;
-            var gpu = overlay.GpuBackend;
-            if (gpu is null && allowUnavailableGpu)
-            {
-                Console.WriteLine($"SKIP: GPU raster cache ({overlay.GpuFailureReason ?? "GPU disabled"})");
-                return;
-            }
-            if (gpu is null) throw new InvalidOperationException(overlay.GpuFailureReason);
+            // WinForms caps top-level window bounds on small desktops. Compare
+            // the two renderers at the exact synthetic viewport size instead.
+            using var host = new Control();
+            using var gpu = CreateRasterRenderer(host.Handle, viewport.Size, allowUnavailableGpu);
+            if (gpu is null) return;
             var background = Field<GpuRasterLayer>(gpu, "background");
             void Render() => gpu.Render(app, viewport, false);
             Render(); int count = background.BandPaintCount;
@@ -216,6 +213,22 @@ internal static class RegressionChecks
             Check(gpu.RasterUploadBytes == 0, "a finished snowman should not keep changing cached pixels");
         }
         finally { app.ExitThread(); }
+    }
+
+    static GpuSnowRenderer? CreateRasterRenderer(nint window, Size size, bool allowUnavailableGpu)
+    {
+        try
+        {
+            if (Environment.GetEnvironmentVariable("QUIETSNOW_FORCE_GDI") == "1")
+                throw new InvalidOperationException("GPU disabled");
+            return new GpuSnowRenderer(window, size);
+        }
+        catch (Exception error) when (allowUnavailableGpu &&
+            error is COMException or DllNotFoundException or EntryPointNotFoundException or InvalidOperationException or ArgumentException)
+        {
+            Console.WriteLine($"SKIP: GPU raster cache ({error.Message})");
+            return null;
+        }
     }
 
     static unsafe void CompareWithGdi(SnowApp app, Rectangle viewport, GpuSnowRenderer gpu)
