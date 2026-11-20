@@ -3,8 +3,8 @@ namespace QuietSnow;
 internal sealed partial class SnowApp
 {
     internal const float MaximumBallRadius = 84;
-    internal bool CleanerActive => weatherMode == WeatherMode.Snow && !GameModeActive;
-    bool SolidWeather => weatherMode != WeatherMode.Rain;
+    internal bool CleanerActive => SupportsSnowballs && !GameModeActive;
+    bool SupportsSnowballs => weatherMode == WeatherMode.Snow;
 
     bool CanAccumulateOn(Surface surface)
     {
@@ -54,7 +54,7 @@ internal sealed partial class SnowApp
 
     bool SnowAt(Point point)
     {
-        if (!snowbanksEnabled || !SolidWeather) return false;
+        if (!snowbanksEnabled) return false;
         foreach (var surface in ordered)
         {
             var bounds = surface.Bounds;

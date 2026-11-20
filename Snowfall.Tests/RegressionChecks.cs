@@ -288,12 +288,18 @@ internal static class RegressionChecks
                 app.SetWeatherMode(mode);
                 Set(app, "snowbanksEnabled", true);
                 var view = new Rectangle(screen.Bounds.Left + 80, screen.Bounds.Top + 80, 641, 479);
-                var surface = new Surface { Handle = 123, Age = 75, IsExplorer = true };
+                var surface = new Surface
+                {
+                    Handle = 123, Age = mode == WeatherMode.Snow ? 75 : 0, IsExplorer = true,
+                    HasSeasonalDeposit = mode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom
+                };
                 surface.Resize(new Rectangle(view.Left + 60, view.Top + 330, 500, 140)); surfaces.Add(surface);
                 var flake = new Flake { Region = view, X = view.Left + 30, Y = view.Top + 25, Size = mode == WeatherMode.Snow ? 4.2f : 12, Fade = 1, Opacity = .8f,
                     Variant = mode == WeatherMode.CherryBlossom ? 4 : 0 };
                 flakes.Add(flake);
-                var ball = new Ball { X = view.Left + 400, Y = view.Top + 150, R = 19, Held = true }; balls.Add(ball);
+                var ball = mode == WeatherMode.Snow
+                    ? new Ball { X = view.Left + 400, Y = view.Top + 150, R = 19, Held = true } : null;
+                if (ball is not null) balls.Add(ball);
                 Environment.SetEnvironmentVariable("QUIETSNOW_FULL_PRESENT", "1");
                 using var reference = new SnowOverlay(app, view); _ = reference.Handle;
                 Environment.SetEnvironmentVariable("QUIETSNOW_FULL_PRESENT", null);
@@ -319,13 +325,13 @@ internal static class RegressionChecks
                     if (frame == 14) flakes.Clear();
                     if (frame == 15) { flakes.Add(flake); flake.X = view.Right + 3; }
                     if (frame == 16) flake.X = view.Left + 35;
-                    if (frame == 18) { ball.Held = false; ball.R = 26; }
+                    if (frame == 18 && ball is not null) { ball.Held = false; ball.R = 26; }
                     if (frame == 20) { var cover = new Surface { Handle = 456 }; cover.Resize(new Rectangle(view.Left + 150, view.Top + 230, 180, 200)); surfaces.Insert(0, cover); }
                     if (frame == 22) surfaces.RemoveAll(s => s.Handle == 456);
                     if (frame == 23) Set(app, "snowbanksEnabled", false);
                     flake.X += 17.3f; flake.Y += 8.1f; flake.Fade = .4f + frame % 4 * .15f;
                     flake.Angle += .37f;
-                    ball.X -= 3.7f; ball.Y += 1.1f; ball.Rotation += .15f;
+                    if (ball is not null) { ball.X -= 3.7f; ball.Y += 1.1f; ball.Rotation += .15f; }
                     if (frame % 4 == 0) surface.Snow[12] = frame % 3 * 4;
                     if (frame % 7 == 0) surface.Bounds.Offset(3, -1);
                     Check(gpu.Render(app, view) >= 0, "Present1 must succeed");
@@ -348,7 +354,9 @@ internal static class RegressionChecks
                     finally { actual.UnlockBits(a); expected.UnlockBits(b); }
                     if (differences != 0) { actual.Save(Path.Combine(AppContext.BaseDirectory,"partial-actual.png")); expected.Save(Path.Combine(AppContext.BaseDirectory,"partial-expected.png")); }
                     Check(differences == 0, $"presented partial frame {frame} differs from full rendering in {differences} pixels on {screen.DeviceName}");
-                    if (frame > 0 && frame is not (8 or 10 or 12)) Check(gpu.PresentedPixels > 0 && gpu.PresentedPixels < (long)view.Width * view.Height,
+                    if (frame == 15 && ball is null)
+                        Check(gpu.PresentedPixels == 0, "an offscreen particle must leave the frame unchanged");
+                    else if (frame > 0 && frame is not (8 or 10 or 12)) Check(gpu.PresentedPixels > 0 && gpu.PresentedPixels < (long)view.Width * view.Height,
                         "moving objects should update a subset of the monitor");
                 }
                 surfaces.Clear(); flakes.Clear(); balls.Clear();

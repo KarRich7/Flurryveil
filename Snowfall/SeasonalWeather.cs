@@ -12,6 +12,10 @@ internal sealed partial class SnowApp
     internal float RainSlant => Math.Clamp(flowWind * .004f, -.5f, .5f);
     internal bool LowPowerMode => powerSaving && desktopActivity?.OnBatteryOrSaver == true;
     internal int EffectiveFrameLimit => GameModeActive || LowPowerMode ? Math.Min(30, frameLimit) : frameLimit;
+    bool PlantWeather => weatherMode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom;
+
+    bool HasAccumulation(Surface surface) =>
+        SupportsSnowballs ? surface.Age > 0 : PlantWeather && surface.HasSeasonalDeposit;
 
     void RefreshDesktopActivity()
     {
@@ -23,9 +27,9 @@ internal sealed partial class SnowApp
             RefreshInputRegion();
             foreach (var overlay in overlays) overlay.Hide();
         }
-        else if (!diagnostics && settings is { IsHandleCreated: true, IsDisposed: false })
+        else if (dispatcher is { IsHandleCreated: true, IsDisposed: false })
         {
-            Tick(); timer.Start(settings);
+            Tick(); timer.Start(dispatcher);
         }
     }
 
@@ -36,7 +40,7 @@ internal sealed partial class SnowApp
         CancelBallDrag();
         clearProgress = -1;
         balls.Clear();
-        foreach (var surface in ordered) { Array.Clear(surface.Snow); Array.Clear(surface.NewLedge); surface.Age = 0; }
+        foreach (var surface in ordered) surface.ClearAccumulation();
         flakes.Clear(); dust.Clear();
         weatherMode = mode;
         previousPointer = null; nextInputUpdate = 0;
@@ -83,8 +87,7 @@ internal sealed partial class SnowApp
         flowSpeed += (fallSpeed / 100f - flowSpeed) * blend;
         flowWind += (wind * 65 - flowWind) * blend;
         bool rain = weatherMode == WeatherMode.Rain;
-        if (!rain && snowbanksEnabled)
-            foreach (var surface in ordered) if (CanAccumulateOn(surface)) surface.Age = Math.Min(75, surface.Age + dt * .55f);
+        float plantDeposit = weatherMode == WeatherMode.CherryBlossom ? 1.8f : 2.5f;
         for (int i = flakes.Count - 1; i >= 0; i--)
         {
             var flake = flakes[i];
@@ -121,17 +124,24 @@ internal sealed partial class SnowApp
             else if (landing is not null)
             {
                 int column = Math.Clamp((int)((flake.X - landing.Bounds.Left) / 12), 0, landing.Snow.Length - 1);
-                // One landing must be visible even in the smallest pile.
-                landing.Snow[column] = Math.Min(18 * landing.SnowScale, landing.Snow[column] + 6.5f * landing.SnowScale);
+                DepositSeasonalMaterial(landing, column, plantDeposit * landing.SnowScale);
             }
             ResetFlake(flake);
         }
         if (!rain) { RelaxDrifts(dt); ApplyMelting(dt); }
     }
 
+    void DepositSeasonalMaterial(Surface surface, int column, float amount)
+    {
+        float limit = (weatherMode == WeatherMode.CherryBlossom ? 8f : 12f) * surface.SnowScale;
+        if (surface.Snow[column] >= limit) return;
+        surface.Snow[column] = Math.Min(limit, surface.Snow[column] + amount);
+        surface.HasSeasonalDeposit = true;
+    }
+
     void ConfigureSeasonalGrain(ref SnowDust grain)
     {
-        if (weatherMode is not (WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom)) return;
+        if (!PlantWeather) return;
         if (grain.Mass <= 0) grain.Mass = grain.Size * .22f * BankScale;
         grain.Size = weatherMode == WeatherMode.AutumnLeaves ? 10 + (float)random.NextDouble() * 7 : 7 + (float)random.NextDouble() * 5;
         grain.Variant = random.Next(4) + (weatherMode == WeatherMode.CherryBlossom ? 4 : 0);
@@ -182,6 +192,8 @@ internal sealed partial class SnowApp
     static int SeasonalPileHeight(Surface surface, int column)
     {
         float x = Math.Min(surface.Bounds.Right - 3, surface.Bounds.Left + column * 12 + 3);
-        return (int)MathF.Floor((surface.Bounds.Top - SnowTop(surface, x)) / 2) * 2;
+        float height = surface.Bounds.Top - SnowTop(surface, x);
+        // A thin first layer is visible without increasing the deposited mass.
+        return height < .5f ? 0 : (int)MathF.Ceiling(height / 2) * 2;
     }
 }

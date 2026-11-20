@@ -23,12 +23,7 @@ internal sealed partial class SnowApp
 
     void FinishClear()
     {
-        foreach (var surface in ordered)
-        {
-            Array.Clear(surface.Snow);
-            Array.Clear(surface.NewLedge);
-            surface.Age = 0;
-        }
+        foreach (var surface in ordered) surface.ClearAccumulation();
         balls.Clear();
         MouseUp();
         clearProgress = -1;
@@ -56,7 +51,7 @@ internal sealed partial class SnowApp
 
     public bool RemoveBall(Point point)
     {
-        if (EffectsHidden || clearProgress >= 0) return false;
+        if (!SupportsSnowballs || EffectsHidden || clearProgress >= 0) return false;
         for (int i = balls.Count - 1; i >= 0; i--)
         {
             var ball = balls[i];
@@ -146,7 +141,7 @@ internal sealed partial class SnowApp
     // contour and mouse targets both use these same column heights.
     internal float PushDrift(Point point, int direction, float velocity)
     {
-        if (!snowbanksEnabled || EffectsHidden || clearProgress >= 0 || direction == 0) return 0;
+        if (weatherMode == WeatherMode.Rain || !snowbanksEnabled || EffectsHidden || clearProgress >= 0 || direction == 0) return 0;
         foreach (var surface in ordered)
         {
             var bounds = surface.Bounds;

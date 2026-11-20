@@ -10,10 +10,10 @@
 
 | Пакет | Как запустить |
 | --- | --- |
-| [Установщик Windows](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.0/Flurryveil-1.0.0-win-x64-Setup.exe) | Запустите установщик, затем откройте Flurryveil из меню «Пуск». |
-| [Portable ZIP](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.0/Flurryveil-1.0.0-win-x64-Portable.zip) | Распакуйте архив и запустите `Flurryveil.exe`. |
+| [Установщик Windows](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.1/Flurryveil-1.0.1-win-x64-Setup.exe) | Запустите установщик, затем откройте Flurryveil из меню «Пуск». |
+| [Portable ZIP](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.1/Flurryveil-1.0.1-win-x64-Portable.zip) | Распакуйте архив и запустите `Flurryveil.exe`. |
 
-Поддерживаются Windows 11 и Windows 10 начиная со сборки 19045. Среда .NET 10 уже включена в оба пакета. Выпуск 1.0.0 поставляется без цифровой подписи. [Описание релиза и контрольные суммы](https://github.com/KarRich7/Flurryveil/releases/tag/v1.0.0).
+Поддерживаются Windows 11 и Windows 10 начиная со сборки 19045. Среда .NET 10 уже включена в оба пакета. Выпуск 1.0.1 поставляется без цифровой подписи. [Описание релиза и контрольные суммы](https://github.com/KarRich7/Flurryveil/releases/tag/v1.0.1).
 
 ## Первые шаги
 

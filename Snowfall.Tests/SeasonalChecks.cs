@@ -59,9 +59,19 @@ internal static class SeasonalChecks
                 app.SetWeatherMode(mode); update(1f / 60);
                 if (mode != WeatherMode.Snow)
                     Check(!balls.Contains(snowman), "changing weather must clear previous snowmen and snowballs");
+                // A stale ball must not become visible or interactive after changing modes.
                 if (!balls.Contains(snowman)) balls.Add(snowman);
                 app.RefreshInputRegion();
-                Check(input.ContainsHit(new Point((int)snowman.X, (int)snowman.Y)), "snowballs must remain interactive in every weather mode");
+                var ballPoint = new Point((int)snowman.X, (int)snowman.Y);
+                Check(input.ContainsHit(ballPoint) == (mode == WeatherMode.Snow),
+                    "the native hit region must include snowballs only in Snow mode");
+                if (mode != WeatherMode.Snow)
+                {
+                    var bounds = new List<RectangleF>();
+                    app.GpuLayerBounds(bounds, SnowPaintLayer.Foreground);
+                    Check(bounds.Count == 0 && !app.CanPickUpSnow(ballPoint), $"{mode} must ignore a stale snowball");
+                    balls.Clear();
+                }
                 Check(flakes.Count is > 0 and <= 720, "weather particle count must stay bounded");
                 Check(mode == WeatherMode.Snow || flakes.All(f => f.Size >= 6 && f.Speed > 0), "seasonal particles must have their own scale and speed");
                 if (mode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom)
@@ -75,7 +85,12 @@ internal static class SeasonalChecks
                     Check(dust.Any(grain => Math.Abs(grain.Y - surface.Bounds.Top) < 3 && grain.Vy < 0), "rain must splash on a window edge");
                     Check(surface.Age == 0 && surface.Snow.All(h => h == 0), "rain must never accumulate a snowbank");
                 }
-                surface.Age = mode == WeatherMode.Rain ? 0 : 75;
+                if (mode == WeatherMode.Snow) surface.Age = 75;
+                else if (mode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom)
+                {
+                    surface.HasSeasonalDeposit = true;
+                    surface.Snow[10] = 2;
+                }
                 foreach (var overlay in overlays)
                 {
                     var bounds = overlay.Bounds;
@@ -143,6 +158,22 @@ internal static class SeasonalChecks
                 Check(Field<double>(app, "lastScan") == scan, "inactive desktop must not enumerate windows");
                 Marshal.WriteInt32(notification, 20, 1); activity.ProcessNotification(0x0218, 0x8013, notification);
                 Check(!activity.Unavailable && !app.CaptureSettings().Paused, "automatic resume must preserve manual pause preference");
+                using var dispatcher = new Control();
+                _ = dispatcher.Handle;
+                Set(app, "dispatcher", dispatcher);
+                var clock = Field<FrameClock>(app, "timer");
+                try
+                {
+                    var settings = Field<SettingsForm>(app, "settings");
+                    Check(!settings.IsHandleCreated, "the background session must have no settings window handle");
+                    notify();
+                    Check(Field<object?>(clock, "run") is not null, "display-on must restart the frame clock through the background dispatcher");
+                }
+                finally
+                {
+                    clock.Stop();
+                    Set(app, "dispatcher", null!);
+                }
             }
             finally { Marshal.FreeHGlobal(notification); }
             Set(activity, "<OnBatteryOrSaver>k__BackingField", true);
@@ -163,6 +194,8 @@ internal static class SeasonalChecks
     {
         var ordered = Field<List<Surface>>(app, "ordered");
         var flakes = Field<List<Flake>>(app, "flakes");
+        var dust = Field<List<SnowDust>>(app, "dust");
+        var updateDust = typeof(SnowApp).GetMethod("UpdateDust", Flags)!.CreateDelegate<Action<float>>(app);
         var workAreas = Field<Rectangle[]>(app, "workAreas");
         Set(app, "workAreas", Field<Rectangle[]>(app, "monitorBounds"));
         Set(app, "meltSnow", true);
@@ -180,11 +213,20 @@ internal static class SeasonalChecks
         foreach (var weather in new[] { WeatherMode.AutumnLeaves, WeatherMode.CherryBlossom })
         {
             app.SetWeatherMode(weather);
+            for (int i = 0; i < 640; i++)
+                flakes.Add(new Flake { Region = view, X = view.Right - 16, Y = view.Top + 14, Fade = 1 });
+            for (int i = 0; i < 30; i++) update(.075f);
+            Check(window.Age == 0 && window.BaseHeight == 0 && window.Snow.All(value => value == 0) && !window.HasSeasonalDeposit,
+                $"{weather} must not build a uniform pile from elapsed time");
+            flakes.Clear();
+
             flakes.Add(new Flake { Region = view, X = windowX, Y = window.Bounds.Top - 2, Speed = 60, Fade = 1 });
             flakes.Add(new Flake { Region = view, X = taskbarX, Y = taskbar.Bounds.Top - 2, Speed = 60, Fade = 1 });
             update(.075f);
             flakes.Clear();
-            Check(window.Snow[10] > 0, $"{weather} must accumulate from the first landing on a bare window");
+            float firstDropLimit = weather == WeatherMode.CherryBlossom ? 1.8f : 2.5f;
+            Check(window.HasSeasonalDeposit && window.Snow[10] > 0 && window.Snow[10] <= firstDropLimit * window.SnowScale,
+                $"{weather} must accumulate gradually from the first landing on a bare window");
             Check(taskbar.Snow[(taskbarX - view.Left) / 12] > 0, $"{weather} must settle at the taskbar when its pile is set to stay on top");
 
             using var fallback = new Bitmap(view.Width, view.Height, PixelFormat.Format32bppPArgb);
@@ -198,6 +240,21 @@ internal static class SeasonalChecks
                 using var rendered = gpu.Capture();
                 CheckLandingPixels(rendered, "GPU");
             }
+
+            for (int i = 0; i < 40; i++)
+                flakes.Add(new Flake { Region = view, X = windowX, Y = window.Bounds.Top - 14, Speed = 500, Fade = 1 });
+            update(.075f);
+            flakes.Clear();
+            float depthLimit = weather == WeatherMode.CherryBlossom ? 8f : 12f;
+            Check(window.Snow.Max() <= depthLimit * window.SnowScale && window.BaseHeight == 0,
+                $"{weather} must keep window piles shallow after repeated landings");
+
+            window.ClearAccumulation();
+            dust.Clear();
+            dust.Add(new SnowDust { X = windowX, Y = window.Bounds.Top - 1, Vy = 60, Life = 1, Mass = 2, Settles = true });
+            updateDust(.035f);
+            Check(window.HasSeasonalDeposit && window.Snow[10] > 0,
+                $"swept {weather} particles must still settle visibly on a previously bare window");
 
             void CheckLandingPixels(Bitmap frame, string backend)
             {

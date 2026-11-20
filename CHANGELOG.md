@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Confined snowball and snowman interactions to Snow mode. Switching weather releases an active drag and clears the previous snowballs.
+- Reduced leaf and blossom buildup on windows. Piles grow from actual landings, and the first landed particle remains visible at the smallest pile size.
+- Fixed resuming effects after the display turns back on while the app is running in the tray.
+
 ## 1.0.0
 
 - Renamed «Тихий снег» to Flurryveil and added original app, tray and installer artwork.

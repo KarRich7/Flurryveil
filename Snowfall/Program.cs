@@ -107,6 +107,7 @@ internal sealed class Surface
         }
     }
     public float BaseHeight { get; private set; }
+    public bool HasSeasonalDeposit;
     public float SnowScale = 1;
     public bool IsExplorer, IsBrowser;
     public string AppName = "";
@@ -114,6 +115,14 @@ internal sealed class Surface
     public double LastSnowRelease;
     public int ResizeTravel;
     public float GarlandX, GarlandY, GarlandVx, GarlandVy;
+    public void ClearAccumulation()
+    {
+        Array.Clear(Snow);
+        Array.Clear(NewLedge);
+        Age = 0;
+        HasSeasonalDeposit = false;
+    }
+
     public void Resize(Rectangle bounds)
     {
         Bounds = bounds;
@@ -174,7 +183,6 @@ internal sealed partial class SnowApp : ApplicationContext
     double nextGameCheck;
     readonly GameActivity games = new();
     double nextInputUpdate, lastWindowMotion;
-    bool growingBall;
     float flowSpeed = 1, flowWind, breezePhase;
     bool snowbanksEnabled = true, garlandEnabled = true;
     int intensity = 1, wind, snowAmount = 100, fallSpeed = 100;
@@ -538,9 +546,9 @@ internal sealed partial class SnowApp : ApplicationContext
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(previousInputState))) return;
         (currentInputState, previousInputState) = (previousInputState, currentInputState);
         var region = InputOverlay.EmptyRegion();
-        if (!EffectsHidden && clearProgress < 0)
+        if (SupportsSnowballs && !EffectsHidden && clearProgress < 0)
         {
-            if (snowbanksEnabled && SolidWeather)
+            if (snowbanksEnabled)
             {
                 foreach (var surface in ordered)
                 {
@@ -575,7 +583,8 @@ internal sealed partial class SnowApp : ApplicationContext
     }
 
     public bool CanPickUpSnow(Point point) =>
-        !EffectsHidden && clearProgress < 0 && !IsSettingsPoint(point) && (PickableBall(point) is not null || SnowAt(point));
+        SupportsSnowballs && !EffectsHidden && clearProgress < 0 &&
+        !IsSettingsPoint(point) && (PickableBall(point) is not null || SnowAt(point));
 
     void ExcludeCoveredWindows(Region region, Surface surface)
     {
@@ -674,7 +683,7 @@ internal sealed partial class SnowApp : ApplicationContext
         timer.Interval = 1000d / EffectiveFrameLimit;
         UpdateSnowfall(dt);
         if (CleanerActive && cleaner.SelectedKind != 0) cleaner.Update(dt, workAreas, scrapeSnow);
-        UpdateBalls(dt);
+        if (SupportsSnowballs) UpdateBalls(dt);
         AdvanceClear(dt);
         UpdateDust(dt);
         if (balls.Count > 0 || now >= nextInputUpdate)
@@ -818,6 +827,7 @@ internal sealed partial class SnowApp : ApplicationContext
     }
     void UpdateDust(float dt)
     {
+        bool seasonal = PlantWeather;
         for (int i = dust.Count - 1; i >= 0; i--)
         {
             var grain = dust[i];
@@ -831,7 +841,6 @@ internal sealed partial class SnowApp : ApplicationContext
             float oldY = grain.Y;
             grain.X += grain.Vx * dt;
             grain.Y += grain.Vy * dt;
-            bool seasonal = weatherMode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom;
             if (seasonal)
             {
                 grain.Phase += dt * (1.4f + grain.Variant % 4 * .2f); grain.Angle += grain.Spin * dt;
@@ -840,7 +849,7 @@ internal sealed partial class SnowApp : ApplicationContext
                 grain.Vy = Math.Min(72, grain.Vy + 55 * dt);
             }
             else { grain.Vx *= 1 - dt * .95f; grain.Vy = Math.Min(330, grain.Vy + 310 * dt); }
-            if (grain.Settles && snowbanksEnabled && grain.Vy > 0)
+            if (grain.Settles && weatherMode != WeatherMode.Rain && snowbanksEnabled && grain.Vy > 0)
             {
                 Surface? landing = null;
                 foreach (var surface in ordered)
@@ -856,8 +865,9 @@ internal sealed partial class SnowApp : ApplicationContext
                 if (landing is not null)
                 {
                     int column = Math.Clamp((int)((grain.X - landing.Bounds.Left) / 12), 0, landing.Snow.Length - 1);
-                    landing.Snow[column] = Math.Min(18 * landing.SnowScale, landing.Snow[column] +
-                        (grain.Mass > 0 ? grain.Mass : grain.Size * .22f * landing.SnowScale));
+                    float amount = grain.Mass > 0 ? grain.Mass : grain.Size * .22f * landing.SnowScale;
+                    if (seasonal) DepositSeasonalMaterial(landing, column, amount);
+                    else landing.Snow[column] = Math.Min(18 * landing.SnowScale, landing.Snow[column] + amount);
                     dust[i] = dust[^1];
                     dust.RemoveAt(dust.Count - 1);
                     continue;
@@ -1146,7 +1156,6 @@ internal sealed partial class SnowApp : ApplicationContext
         if (!CanPickUpSnow(point)) return false;
         lastMouse = point;
         held = PickableBall(point);
-        growingBall = SolidWeather;
         grabOffset = PointF.Empty;
         grabbedFromBank = false;
         if (held is null)
@@ -1168,27 +1177,25 @@ internal sealed partial class SnowApp : ApplicationContext
     double lastDragTime;
     public void MouseMove(Point point, bool down)
     {
-        if (!down || point == lastMouse) return;
+        if (!SupportsSnowballs || !down || point == lastMouse) return;
         if (held is not null)
         {
-            if (growingBall)
+            float dx = point.X - lastMouse.X, dy = point.Y - lastMouse.Y;
+            float distance = MathF.Sqrt(dx * dx + dy * dy);
+            float nextRadius = Math.Min(MaximumBallRadius, held.R + distance * .065f);
+            float needed = MathF.PI * .35f * (nextRadius * nextRadius - held.R * held.R);
+            int samples = Math.Clamp((int)MathF.Ceiling(distance / 8), 1, 32);
+            float gathered = 0;
+            for (int i = 1; i <= samples && gathered < needed; i++)
             {
-                float dx = point.X - lastMouse.X, dy = point.Y - lastMouse.Y;
-                float distance = MathF.Sqrt(dx * dx + dy * dy);
-                float nextRadius = Math.Min(MaximumBallRadius, held.R + distance * .065f);
-                float needed = MathF.PI * .35f * (nextRadius * nextRadius - held.R * held.R);
-                int samples = Math.Clamp((int)MathF.Ceiling(distance / 8), 1, 32);
-                float gathered = 0;
-                for (int i = 1; i <= samples && gathered < needed; i++)
-                {
-                    var sample = new Point(lastMouse.X + (int)(dx * i / samples),
-                        lastMouse.Y + (int)(dy * i / samples) + (grabbedFromBank ? 0 : (int)MathF.Round(grabOffset.Y + held.R)));
-                    gathered += CollectSnow(sample, (int)Math.Min(90, held.R + 8), needed - gathered);
-                }
-                float previousRadius = held.R;
-                held.R = Math.Min(MaximumBallRadius, MathF.Sqrt(held.R * held.R + gathered / (MathF.PI * .35f)));
-                if (!grabbedFromBank) grabOffset.Y -= held.R - previousRadius;
+                var sample = new Point(lastMouse.X + (int)(dx * i / samples),
+                    lastMouse.Y + (int)(dy * i / samples) + (grabbedFromBank ? 0 : (int)MathF.Round(grabOffset.Y + held.R)));
+                gathered += CollectSnow(sample, (int)Math.Min(90, held.R + 8), needed - gathered);
             }
+            float previousRadius = held.R;
+            held.R = Math.Min(MaximumBallRadius, MathF.Sqrt(held.R * held.R + gathered / (MathF.PI * .35f)));
+            if (!grabbedFromBank) grabOffset.Y -= held.R - previousRadius;
+
             double now = clock.Elapsed.TotalSeconds;
             float elapsed = (float)Math.Clamp(now - lastDragTime, .016, .15);
             held.Vx = Math.Clamp((point.X - lastMouse.X) / elapsed * .45f, -180, 180);
@@ -1209,11 +1216,10 @@ internal sealed partial class SnowApp : ApplicationContext
     {
         if (held != null) { held.Held = false; if (clock.Elapsed.TotalSeconds - lastDragTime > .12) held.Vx = 0; }
         held = null;
-        growingBall = false;
         grabbedFromBank = false;
     }
 
-    internal bool HasHeldBall => held is { Held: true };
+    internal bool HasHeldBall => SupportsSnowballs && held is { Held: true };
 
     void CancelBallDrag()
     {
@@ -1222,7 +1228,7 @@ internal sealed partial class SnowApp : ApplicationContext
     }
     float CollectSnow(Point point, int radius, float areaNeeded)
     {
-        if (!snowbanksEnabled || !SolidWeather || areaNeeded <= 0) return 0;
+        if (!snowbanksEnabled || areaNeeded <= 0) return 0;
         float collected = 0;
         foreach (var surface in ordered)
         {
@@ -1285,7 +1291,7 @@ internal sealed partial class SnowApp : ApplicationContext
 
         Rect(viewport);
         state.Add((int)weatherMode);
-        if (inputRegion && !SolidWeather && balls.Count == 0) return;
+        if (inputRegion && !SupportsSnowballs) return;
         state.Add(snowbanksOnTop ? 1 : 0);
         state.Add(snowmenOnTop ? 1 : 0);
         if (inputRegion)
@@ -1318,10 +1324,10 @@ internal sealed partial class SnowApp : ApplicationContext
             else Rect(surface.Bounds);
             if (layer != SnowPaintLayer.Background && !inputRegion) continue;
             if (inputRegion) state.Add(surface.Age < .2f ? 0 : 1);
-            if (snowbanksEnabled && CanAccumulateOn(surface) && surface.Age > 0 && (!inputRegion || SolidWeather) &&
+            if (snowbanksEnabled && CanAccumulateOn(surface) && HasAccumulation(surface) &&
                 (!rasterRegion.HasValue || DecorationBounds(surface).IntersectsWith(rasterRegion.Value)))
             {
-                if (!inputRegion && weatherMode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom)
+                if (PlantWeather)
                 {
                     // Only these integer leaf placements affect cached pixels;
                     // retain subpixel motion in the simulation without repainting.
@@ -1350,7 +1356,7 @@ internal sealed partial class SnowApp : ApplicationContext
             state.Add(snowbanksEnabled ? 1 : 0);
             state.Add(garlandPalette); state.Add(garlandMode); state.Add(garlandBrightness);
         }
-        else
+        else if (SupportsSnowballs)
         {
             foreach (var ball in balls)
             {
@@ -1375,10 +1381,11 @@ internal sealed partial class SnowApp : ApplicationContext
         if (layer == SnowPaintLayer.Background)
         {
             foreach (var surface in ordered)
-                if (!surface.Bounds.IsEmpty && (snowbanksEnabled && CanAccumulateOn(surface) && surface.Age > 0 || ShouldDrawGarland(surface)))
+                if (!surface.Bounds.IsEmpty &&
+                    (snowbanksEnabled && CanAccumulateOn(surface) && HasAccumulation(surface) || ShouldDrawGarland(surface)))
                     bounds.Add(DecorationBounds(surface));
         }
-        else
+        else if (SupportsSnowballs)
         {
             foreach (var ball in balls) bounds.Add(BallPaintBounds(ball));
             if (CleanerActive) cleaner.CollectGpuBounds(bounds);
@@ -1428,7 +1435,7 @@ internal sealed partial class SnowApp : ApplicationContext
             if (surface.Bounds.IsEmpty) continue;
             bool garland = ShouldDrawGarland(surface);
             bool onTop = SnowbankOnTop(surface);
-            if (!garland && (onTop || !snowbanksEnabled || surface.Age <= 0)) continue;
+            if (!garland && (onTop || !snowbanksEnabled || !HasAccumulation(surface))) continue;
             var decoration = DecorationBounds(surface);
             if (!decoration.IntersectsWith(clip)) continue;
             var state = g.Save();
@@ -1455,7 +1462,7 @@ internal sealed partial class SnowApp : ApplicationContext
                 var surface = ordered[i];
                 if (!SnowbankOnTop(surface) || surface.Bounds.IsEmpty) continue;
                 var cap = new Rectangle(surface.Bounds.Left, surface.Bounds.Top - 48, surface.Bounds.Width, 49);
-                if (surface.Age <= 0 || !cap.IntersectsWith(clip)) continue;
+                if (!HasAccumulation(surface) || !cap.IntersectsWith(clip)) continue;
                 var state = g.Save();
                 g.IntersectClip(cap);
                 PaintSnowCap(g, surface);
@@ -1476,7 +1483,7 @@ internal sealed partial class SnowApp : ApplicationContext
                 g.FillEllipse(flakeBrush, grain.X, grain.Y - trail / 2, grain.Size, grain.Size + trail);
             }
         }
-        if ((layer & SnowPaintLayer.Foreground) != 0)
+        if (SupportsSnowballs && (layer & SnowPaintLayer.Foreground) != 0)
         {
             foreach (var ball in balls)
             {
@@ -1553,7 +1560,7 @@ internal sealed partial class SnowApp : ApplicationContext
 
     void PaintSnowCap(Graphics graphics, Surface surface)
     {
-        if (!snowbanksEnabled || !CanAccumulateOn(surface) || surface.Age <= 0) return;
+        if (!snowbanksEnabled || !CanAccumulateOn(surface) || !HasAccumulation(surface)) return;
         if (weatherMode != WeatherMode.Snow) { PaintSeasonalPile(graphics, surface); return; }
         using var cap = MakeSnowCap(surface);
         using var volume = new LinearGradientBrush(new RectangleF(surface.Bounds.Left, surface.Bounds.Top - 44, surface.Bounds.Width, 45),

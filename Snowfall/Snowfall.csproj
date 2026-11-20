@@ -10,7 +10,7 @@
     <AssemblyName>Flurryveil</AssemblyName>
     <Product>Flurryveil</Product>
     <Description>Interactive seasonal weather for the Windows desktop.</Description>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <ApplicationIcon>Assets/Flurryveil.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

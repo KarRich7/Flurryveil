@@ -111,15 +111,44 @@ internal static class InteractionFixChecks
             }
             foreach (var mode in new[] { WeatherMode.Rain, WeatherMode.AutumnLeaves, WeatherMode.CherryBlossom })
             {
+                app.SetWeatherMode(WeatherMode.Snow);
+                balls.Clear();
+                surfaces.Clear(); surfaces.Add(ledge);
+                ledge.Age = 75; Array.Fill(ledge.Snow, 12);
+                var edge = new Point(ledge.Bounds.Left + 120, ledge.Bounds.Top - 4);
+                app.RefreshInputRegion();
+                SendMessage(input.Handle, 0x0201, 1, Pack(input.PointToClient(edge)));
+                Check(input.Dragging && balls.Single().Held, $"snow must create a draggable ball before switching to {mode}");
+
                 app.SetWeatherMode(mode);
-                Check(balls.Count == 0 && !input.Dragging, "switching weather must remove all balls and finish dragging");
+                Check(balls.Count == 0 && !input.Dragging && GetCapture() != input.Handle,
+                    "switching weather must remove balls and release native dragging");
+                Array.Fill(ledge.Snow, mode == WeatherMode.Rain ? 0 : 12);
+                ledge.HasSeasonalDeposit = mode != WeatherMode.Rain;
+                var beforeClick = ledge.Snow.ToArray();
+                app.RefreshInputRegion();
+                Check(!input.ContainsHit(edge) && SendMessage(input.Handle, 0x0084, 0, Pack(edge)) == -1,
+                    $"{mode} must pass mouse input through to the desktop");
+                SendMessage(input.Handle, 0x0201, 1, Pack(input.PointToClient(edge)));
+                SendMessage(input.Handle, 0x0200, 1, Pack(input.PointToClient(new Point(edge.X + 60, edge.Y))));
+                SendMessage(input.Handle, 0x0202, 0, Pack(input.PointToClient(edge)));
+                Check(!input.Dragging && balls.Count == 0 && ledge.Snow.SequenceEqual(beforeClick),
+                    $"clicking and dragging in {mode} must leave the pile alone");
+                if (mode is WeatherMode.AutumnLeaves or WeatherMode.CherryBlossom)
+                {
+                    dust.Clear();
+                    int firstSprite = mode == WeatherMode.CherryBlossom ? 4 : 0;
+                    Check(app.PushDrift(edge, 1, 130) > 0 && dust.Count > 0 &&
+                        dust.All(grain => grain.Variant >= firstSprite && grain.Variant < firstSprite + 4),
+                        $"sweeping must scatter the matching particles in {mode}");
+                }
                 Check(!app.CleanerActive, "cleaners must be inactive outside the Snow mode");
                 var bounds = new List<RectangleF>(); app.GpuLayerBounds(bounds, SnowPaintLayer.Foreground);
                 Check(bounds.Count == 0, "disabled cleaners must not retain foreground render bounds");
             }
 
             surfaces.Clear(); surfaces.Add(ledge); app.SetWeatherMode(WeatherMode.AutumnLeaves);
-            ledge.Age = 75; Array.Fill(ledge.Snow, 10); dust.Clear();
+            ledge.HasSeasonalDeposit = true; Array.Fill(ledge.Snow, 10); dust.Clear();
             for (int i = 0; i < 12; i++) app.PushDrift(new Point(ledge.Bounds.Left + 70 + i * 50, ledge.Bounds.Top - 3), 1, 130);
             Check(dust.Count > 12 && dust.Select(grain => grain.Variant).Distinct().Count() > 1, "scattered leaves must use varied individual leaf sprites");
             Check(dust.All(grain => grain.Variant is >= 0 and < 4 && grain.Size is >= 10 and <= 17), "scattered leaves must use full leaf sizes and varied colors");
@@ -141,7 +170,7 @@ internal static class InteractionFixChecks
             }
             surfaces.Clear();
 
-            surfaces.Add(ledge); ledge.Resize(new Rectangle(view.Left, view.Top, view.Width, view.Height)); ledge.Age = 75;
+            surfaces.Add(ledge); ledge.Resize(new Rectangle(view.Left, view.Top, view.Width, view.Height));
             Get<List<Flake>>(app, "flakes").Clear(); dust.Clear(); balls.Clear();
             using (var image = new Bitmap(view.Width, 80, PixelFormat.Format32bppPArgb))
             {

@@ -14,12 +14,12 @@ Interactive seasonal weather for the Windows desktop. Watch snow settle on windo
 
 | Package | How to use it |
 | --- | --- |
-| [Windows installer](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.0/Flurryveil-1.0.0-win-x64-Setup.exe) | Install for your Windows account and open Flurryveil from Start. |
-| [Portable ZIP](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.0/Flurryveil-1.0.0-win-x64-Portable.zip) | Extract the archive and run `Flurryveil.exe`. |
+| [Windows installer](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.1/Flurryveil-1.0.1-win-x64-Setup.exe) | Install for your Windows account and open Flurryveil from Start. |
+| [Portable ZIP](https://github.com/KarRich7/Flurryveil/releases/download/v1.0.1/Flurryveil-1.0.1-win-x64-Portable.zip) | Extract the archive and run `Flurryveil.exe`. |
 
-[Release notes and SHA-256 checksums](https://github.com/KarRich7/Flurryveil/releases/tag/v1.0.0) · [All releases](https://github.com/KarRich7/Flurryveil/releases)
+[Release notes and SHA-256 checksums](https://github.com/KarRich7/Flurryveil/releases/tag/v1.0.1) · [All releases](https://github.com/KarRich7/Flurryveil/releases)
 
-The packages target x64 editions of Windows 11 and Windows 10 build 19045 or later. Both include the .NET 10 runtime. The current settings interface is in Russian. The v1.0.0 executables are unsigned.
+The packages target x64 editions of Windows 11 and Windows 10 build 19045 or later. Both include the .NET 10 runtime. The current settings interface is in Russian. The v1.0.1 executables are unsigned.
 
 Run Setup again to update an installed copy. Use Windows **Settings → Apps → Installed apps** to remove it. Settings survive updates and removal in `%LOCALAPPDATA%\QuietSnow\settings.json`, including settings from the older «Тихий снег» build. The portable edition uses the same location.
 
@@ -47,7 +47,7 @@ To package a release, install [Inno Setup 6.7.4](https://jrsoftware.org/isinfo.p
 pwsh -File eng/Build-Release.ps1
 ```
 
-The installer, portable archive and SHA-256 manifest go to `artifacts/`. See [contributing](CONTRIBUTING.md) for the UI smoke test, renderer fallback and release steps. For v1.0.0, see the [release notes](docs/release-notes.md), [changelog](CHANGELOG.md), [architecture](docs/architecture.md), and [verification results](docs/verification.md).
+The installer, portable archive and SHA-256 manifest go to `artifacts/`. See [contributing](CONTRIBUTING.md) for the UI smoke test, renderer fallback and release steps. For v1.0.1, see the [release notes](docs/release-notes.md), [changelog](CHANGELOG.md), [architecture](docs/architecture.md), and [verification results](docs/verification.md).
 
 ## License and credits
 
