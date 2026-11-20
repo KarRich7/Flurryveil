@@ -134,6 +134,8 @@ internal static class RegressionChecks
             var balls = Field<List<Ball>>(app, "balls"); balls.Clear();
             Set(app, "garlandMode", 0);
             var viewport = new Rectangle(-1280, -30, 1280, 720);
+            // The synthetic negative-coordinate scene must have a monitor regardless of the host display layout.
+            Set(app, "monitorBounds", new[] { viewport });
             for (int i = 0; i < 4; i++)
             {
                 var surface = new Surface { Handle = 101 + i, Age = 75, IsExplorer = true };
