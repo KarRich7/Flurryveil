@@ -1,0 +1,19 @@
+**/bin/
+**/obj/
+/artifacts/
+/.qa/
+/.qa-panel/
+/.qa-ui/
+/.vs/
+*.user
+*.suo
+*.log
+
+# Local reports, measurements and legacy executables
+/benchmarks/
+/Готовое приложение/
+/DWM-2026-11-16.md
+/SNOWHUSH-2026-11-16.md
+/ОПТИМИЗАЦИЯ-2026-11-16.md
+/ОТЧЁТ.md
+/ПАМЯТЬ-2026-11-16.md

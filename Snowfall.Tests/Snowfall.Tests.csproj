@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <StartupObject>QuietSnow.RegressionChecks</StartupObject>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <SnowSource Condition="'$(SnowSource)' == ''">../Snowfall</SnowSource>
+  </PropertyGroup>
+  <ItemGroup><Compile Include="$(SnowSource)/*.cs" Link="Application/%(Filename)%(Extension)" /></ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(SnowSource)/Assets/Flurryveil.ico" LogicalName="Snowfall.Assets.Flurryveil.ico"
+                      Condition="Exists('$(SnowSource)/Assets/Flurryveil.ico')" />
+  </ItemGroup>
+</Project>

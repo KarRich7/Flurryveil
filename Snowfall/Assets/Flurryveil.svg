@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Flurryveil">
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#101d2b"/>
+  <path d="M32 12v27M19 19.5l26 15M19 34.5l26-15M26 16l6 4 6-4M19.5 27l6-3.5v-7M44.5 27l-6-3.5v-7"
+        fill="none" stroke="#c9e5f4" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 48c6 0 10-3 15-3 7 0 10 6 21 6"
+        fill="none" stroke="#c9e5f4" stroke-width="3.4" stroke-linecap="round"/>
+</svg>

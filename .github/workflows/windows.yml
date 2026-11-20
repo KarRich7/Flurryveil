@@ -1,0 +1,110 @@
+name: Windows build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Check changed lines for whitespace errors
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ($env:BASE_SHA -match '^[0-9a-f]{40}$' -and $env:BASE_SHA -notmatch '^0+$') {
+            git diff --check $env:BASE_SHA HEAD
+          } else {
+            git diff-tree --root --check --no-commit-id -r HEAD
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and run regression checks
+        run: |
+          dotnet build Snowfall/Snowfall.csproj -c Release -warnaserror
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build Snowfall.Tests/Snowfall.Tests.csproj -c Release -warnaserror
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project Snowfall.Tests/Snowfall.Tests.csproj -c Release --no-build -- --ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Set up Inno Setup 6.7.4
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.4.exe'
+          $compiler = Join-Path $env:RUNNER_TEMP 'Inno Setup 6.7.4'
+          $url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe'
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne 'a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c') {
+            throw 'The Inno Setup download did not match the expected SHA-256.'
+          }
+          $result = Start-Process -FilePath $installer -PassThru -Wait -WindowStyle Hidden -ArgumentList @(
+            '/CURRENTUSER', '/PORTABLE=1', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="{0}"' -f $compiler)
+          )
+          if ($result.ExitCode -ne 0) { throw "Inno Setup extraction failed ($($result.ExitCode))." }
+          "INNO_ISCC=$(Join-Path $compiler 'ISCC.exe')" >> $env:GITHUB_ENV
+
+      - name: Build and test distribution packages
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME }
+          ./eng/Build-Release.ps1 -ReleaseTag $tag
+          if (-not [Environment]::UserInteractive) { Write-Host 'SKIP: package launch requires an interactive Windows session.' }
+          ./eng/Test-Release.ps1 -Launch:([Environment]::UserInteractive) -TestLegacyStartup
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flurryveil-win-x64
+          path: artifacts/Flurryveil-*-win-x64-*
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: verify
+    runs-on: windows-2025
+    concurrency:
+      group: flurryveil-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: flurryveil-win-x64
+          path: artifacts
+      - name: Publish tagged release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $packages = Get-ChildItem -Path 'artifacts/Flurryveil-*-win-x64-*' -File | Select-Object -ExpandProperty FullName
+          $notes = Join-Path $env:RUNNER_TEMP 'flurryveil-release-notes.md'
+          $revision = git rev-parse HEAD
+          $logo = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/raw/$revision/Snowfall/Assets/Flurryveil.png"
+          $body = Get-Content -LiteralPath docs/release-notes.md -Raw
+          @"
+          <img src="$logo" alt="Flurryveil" width="64" height="64">
+
+          $body
+          "@ | Set-Content -LiteralPath $notes -Encoding utf8
+          gh release create $env:GITHUB_REF_NAME @packages --verify-tag --title "Flurryveil $env:GITHUB_REF_NAME" --notes-file $notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
