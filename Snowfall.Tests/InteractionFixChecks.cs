@@ -65,9 +65,11 @@ internal static class InteractionFixChecks
             start = new Point((int)ball.X, (int)ball.Y);
             SendMessage(input.Handle, 0x0201, 1, Pack(input.PointToClient(start)));
             Check(input.Dragging && ball.Held, "mouse capture must start only after a ball was actually picked up");
-            var destination = new Point(start.X + 90, start.Y - 30);
+            // Move back toward the display's center, including on small CI desktops.
+            float beforeDragX = ball.X;
+            var destination = new Point(start.X - 90, start.Y - 30);
             input.PollDrag(destination, true, false);
-            Check(Math.Abs(ball.X - destination.X) < .01f, "cursor polling must recover a missed mouse-move message");
+            Check(Math.Abs(ball.X - beforeDragX + 90) < .01f, "cursor polling must recover a missed mouse-move message");
             input.PollDrag(destination, false, false);
             Check(input.Dragging, "one transient key-state miss must not cancel a drag");
             input.PollDrag(destination, true, false);
